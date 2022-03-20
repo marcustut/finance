@@ -7,6 +7,7 @@ import (
 	"github.com/jomei/notionapi"
 	"github.com/kr/pretty"
 	"github.com/marcustut/finance/config"
+	"github.com/samber/lo"
 )
 
 func main() {
@@ -20,5 +21,9 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("%# v\n", pretty.Formatter(db))
+	results := lo.Map(db.Results, func(page notionapi.Page, _ int) notionapi.Page {
+		return page
+	})
+
+	fmt.Printf("%# v\n", pretty.Formatter(results))
 }
