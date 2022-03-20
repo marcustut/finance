@@ -1,0 +1,4 @@
+notion:
+  integration_token: ${NOTION_INTEGRATION_TOKEN}
+  database_ids:
+    finance: 56066a8cdf914b8f8702c5d34bdb024c
