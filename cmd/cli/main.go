@@ -5,9 +5,8 @@ import (
 	"fmt"
 
 	"github.com/jomei/notionapi"
-	"github.com/kr/pretty"
 	"github.com/marcustut/finance/config"
-	"github.com/samber/lo"
+	"github.com/marcustut/finance/pkg/repository"
 )
 
 func main() {
@@ -16,14 +15,12 @@ func main() {
 
 	client := notionapi.NewClient(notionapi.Token(config.C.Notion.IntegrationToken))
 
-	db, err := client.Database.Query(context.Background(), notionapi.DatabaseID(config.C.Notion.DatabaseIDs.Finance), nil)
+	repo := repository.NewExpenseRepository(client)
+
+	es, err := repo.ListAll(context.TODO())
 	if err != nil {
 		panic(err)
 	}
 
-	results := lo.Map(db.Results, func(page notionapi.Page, _ int) notionapi.Page {
-		return page
-	})
-
-	fmt.Printf("%# v\n", pretty.Formatter(results))
+	fmt.Printf("%#v\n", es)
 }
