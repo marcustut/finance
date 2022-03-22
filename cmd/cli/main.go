@@ -5,8 +5,11 @@ import (
 	"fmt"
 
 	"github.com/jomei/notionapi"
+	"github.com/kr/pretty"
 	"github.com/marcustut/finance/config"
+	"github.com/marcustut/finance/pkg/entity"
 	"github.com/marcustut/finance/pkg/repository"
+	"github.com/samber/lo"
 )
 
 func main() {
@@ -22,5 +25,16 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("%#v\n", es)
+	lo.ForEach(es, func(e entity.Expense, i int) {
+		fmt.Printf("%# v\n", pretty.Formatter(struct {
+			entity.Expense
+		}{
+			Expense: entity.Expense{
+				Name:     e.Name,
+				Amount:   e.Amount,
+				Comment:  e.Comment,
+				Category: e.Category,
+			},
+		}))
+	})
 }

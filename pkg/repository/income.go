@@ -12,18 +12,18 @@ import (
 	"github.com/samber/lo"
 )
 
-// ExpenseRepository supports CRUD operations for Expense.
-type ExpenseRepository struct {
+// IncomeRepository supports CRUD operations for Income.
+type IncomeRepository struct {
 	client *notionapi.Client
 }
 
-// NewExpenseRepository constructs the repository.
-func NewExpenseRepository(client *notionapi.Client) *ExpenseRepository {
-	return &ExpenseRepository{client}
+// NewIncomeRepository constructs the repository.
+func NewIncomeRepository(client *notionapi.Client) *IncomeRepository {
+	return &IncomeRepository{client}
 }
 
-// ListAll fetches all expenses.
-func (r *ExpenseRepository) ListAll(ctx context.Context) ([]entity.Expense, error) {
+// ListAll fetches all incomes.
+func (r *IncomeRepository) ListAll(ctx context.Context) ([]entity.Income, error) {
 	var results []notionapi.Page
 
 	// construct query param
@@ -31,7 +31,7 @@ func (r *ExpenseRepository) ListAll(ctx context.Context) ([]entity.Expense, erro
 		PropertyFilter: &notionapi.PropertyFilter{
 			Property: string(notion.FinancePropertyAmount),
 			Number: &notionapi.NumberFilterCondition{
-				LessThanOrEqualTo: pointer.Float64(0),
+				GreaterThan: pointer.Float64(0),
 			},
 		},
 	}
@@ -53,8 +53,8 @@ func (r *ExpenseRepository) ListAll(ctx context.Context) ([]entity.Expense, erro
 		results = append(results, resp.Results...)
 	}
 
-	// UniqBy removes the duplicated page and MapToExpenses convert it to expense entity
-	es, err := entity.MapToExpenses(lo.UniqBy(results, func(p notionapi.Page) notionapi.ObjectID { return p.ID }))
+	// UniqBy removes the duplicated page and MapToIncomes convert it to Income entity
+	es, err := entity.MapToIncomes(lo.UniqBy(results, func(p notionapi.Page) notionapi.ObjectID { return p.ID }))
 	if err != nil {
 		return nil, err
 	}
@@ -62,8 +62,8 @@ func (r *ExpenseRepository) ListAll(ctx context.Context) ([]entity.Expense, erro
 	return es, nil
 }
 
-// List fetches a list of expenses.
-func (r *ExpenseRepository) List(ctx context.Context, cursor *notionapi.Cursor, pageSize *int, sorts []notionapi.SortObject) ([]entity.Expense, error) {
+// List fetches a list of incomes.
+func (r *IncomeRepository) List(ctx context.Context, cursor *notionapi.Cursor, pageSize *int, sorts []notionapi.SortObject) ([]entity.Income, error) {
 	// construct the query param
 	dqr := &notionapi.DatabaseQueryRequest{
 		PropertyFilter: &notionapi.PropertyFilter{
@@ -87,8 +87,8 @@ func (r *ExpenseRepository) List(ctx context.Context, cursor *notionapi.Cursor, 
 		return nil, err
 	}
 
-	// map to expense entity
-	es, err := entity.MapToExpenses(db.Results)
+	// map to Income entity
+	es, err := entity.MapToIncomes(db.Results)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +96,11 @@ func (r *ExpenseRepository) List(ctx context.Context, cursor *notionapi.Cursor, 
 	return es, nil
 }
 
-// Create adds an expense.
-func (r *ExpenseRepository) Create(ctx context.Context, input entity.CreateExpenseInput) (*entity.Expense, error) {
-	// amount must be negative
-	if input.Amount > 0 {
-		return nil, fmt.Errorf("amount for an expense must be 0 or lesser")
+// Create adds an income.
+func (r *IncomeRepository) Create(ctx context.Context, input entity.CreateIncomeInput) (*entity.Income, error) {
+	// amount must be positive
+	if input.Amount <= 0 {
+		return nil, fmt.Errorf("amount for an income must be greater than 0")
 	}
 
 	// create a finance record
@@ -114,8 +114,8 @@ func (r *ExpenseRepository) Create(ctx context.Context, input entity.CreateExpen
 		return nil, err
 	}
 
-	// map to expense entity
-	e, err := entity.MapToExpense(*res)
+	// map to Income entity
+	e, err := entity.MapToIncome(*res)
 	if err != nil {
 		return nil, err
 	}
