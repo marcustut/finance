@@ -3,4 +3,4 @@ repos:
     rev: v1.45.0
     hooks:
       - id: golangci-lint
-        entry: bash -c 'cd go && golangci-lint run'
+        entry: golangci-lint run
