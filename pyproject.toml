@@ -1,0 +1,14 @@
+[project]
+name = "finance"
+version = "0.1.0"
+description = "Tracking personal finance."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "marimo>=0.20.4",
+    "matplotlib>=3.10.8",
+    "polars>=1.38.1",
+    "python-ulid>=3.1.0",
+    "pyzmq>=27.1.0",
+    "typing-extensions>=4.15.0",
+]
