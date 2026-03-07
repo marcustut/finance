@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>Finance</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:      #0f0f13;
+    --surface: #1a1a22;
+    --surface2:#22222e;
+    --border:  #2a2a38;
+    --accent:  #c8f135;
+    --accent2: #4fc9f5;
+    --red:     #f56565;
+    --text:    #f0f0f0;
+    --sub:     #888899;
+    --radius:  14px;
+    --nav-h:   64px;
+    --safe-b:  env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:'SF Mono',ui-monospace,monospace;overflow:hidden}
+
+  /* ── Layout ── */
+  #app{display:flex;flex-direction:column;height:100%}
+  #pages{flex:1;overflow-y:auto;padding:16px 16px calc(var(--nav-h) + var(--safe-b) + 16px)}
+  .page{display:none}.page.active{display:block}
+
+  /* ── Bottom nav ── */
+  nav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + var(--safe-b));
+      background:var(--surface);border-top:1px solid var(--border);
+      display:flex;align-items:flex-start;padding-top:8px;padding-bottom:var(--safe-b);z-index:100}
+  nav button{flex:1;background:none;border:none;color:var(--sub);font-size:10px;
+             font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px;
+             cursor:pointer;padding:4px 0;transition:color .15s}
+  nav button.active{color:var(--accent)}
+  nav button svg{width:22px;height:22px}
+
+  /* ── Cards / surfaces ── */
+  .card{background:var(--surface);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+  .card-sm{background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:8px}
+
+  /* ── Typography ── */
+  h1{font-size:22px;font-weight:700;color:var(--accent);margin-bottom:4px;letter-spacing:-.5px}
+  h2{font-size:15px;font-weight:600;color:var(--sub);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+  h3{font-size:14px;font-weight:600;margin-bottom:6px}
+  .amount{font-size:28px;font-weight:700;color:var(--accent)}
+  .sub{font-size:12px;color:var(--sub)}
+  .mono{font-family:'SF Mono',ui-monospace,monospace}
+
+  /* ── Forms ── */
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .form-grid .full{grid-column:1/-1}
+  label{display:block;font-size:11px;color:var(--sub);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+  input,select,textarea{width:100%;background:var(--surface2);border:1px solid var(--border);
+    border-radius:8px;color:var(--text);font-family:inherit;font-size:14px;padding:10px 12px;outline:none;
+    -webkit-appearance:none;appearance:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  textarea{resize:none;height:60px}
+  select option{background:var(--surface2)}
+
+  /* ── Buttons ── */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+       border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:600;
+       cursor:pointer;padding:12px 20px;transition:opacity .15s}
+  .btn:active{opacity:.75}
+  .btn-primary{background:var(--accent);color:#0f0f13;width:100%}
+  .btn-ghost{background:var(--surface2);color:var(--text)}
+  .btn-danger{background:transparent;color:var(--red);font-size:12px;padding:6px 10px}
+  .btn-sm{padding:7px 12px;font-size:12px;border-radius:8px}
+
+  /* ── Pills / tags ── */
+  .pill{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill-buy{background:#1a3a1a;color:#4ade80}
+  .pill-sell{background:#3a1a1a;color:#f87171}
+  .pill-cat{background:var(--surface2);color:var(--sub)}
+
+  /* ── List rows ── */
+  .row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;
+       border-bottom:1px solid var(--border)}
+  .row:last-child{border-bottom:none}
+  .row-left{flex:1;min-width:0}
+  .row-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row-meta{font-size:11px;color:var(--sub);margin-top:2px}
+  .row-right{text-align:right;margin-left:12px;flex-shrink:0}
+  .row-amount{font-size:15px;font-weight:700}
+  .row-actions{display:flex;gap:4px;margin-left:8px}
+
+  /* ── FAB ── */
+  .fab{position:fixed;right:20px;bottom:calc(var(--nav-h) + var(--safe-b) + 16px);
+       width:52px;height:52px;border-radius:50%;background:var(--accent);
+       color:#0f0f13;border:none;font-size:26px;cursor:pointer;display:flex;
+       align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(200,241,53,.35);
+       z-index:99;transition:transform .15s}
+  .fab:active{transform:scale(.92)}
+
+  /* ── Modal ── */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;
+            display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .2s}
+  .overlay.open{opacity:1;pointer-events:all}
+  .sheet{background:var(--surface);border-radius:20px 20px 0 0;padding:20px 20px calc(20px + var(--safe-b));
+         width:100%;max-height:92vh;overflow-y:auto;transform:translateY(100%);transition:transform .25s ease}
+  .overlay.open .sheet{transform:translateY(0)}
+  .sheet-handle{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px}
+  .sheet-title{font-size:18px;font-weight:700;margin-bottom:16px}
+
+  /* ── Charts ── */
+  .chart-wrap{position:relative;height:220px;margin-bottom:8px}
+  .chart-wrap-sm{position:relative;height:180px}
+  .charts-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:12px}
+
+  /* ── Stats row ── */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+  .stat{background:var(--surface2);border-radius:10px;padding:12px}
+  .stat-val{font-size:20px;font-weight:700;color:var(--accent)}
+  .stat-label{font-size:11px;color:var(--sub);margin-top:2px}
+
+  /* ── Portfolio alloc bar ── */
+  .alloc-bar{height:8px;border-radius:4px;background:var(--surface2);overflow:hidden;margin:6px 0 12px;display:flex}
+  .alloc-seg{height:100%;transition:width .4s ease}
+
+  /* ── Tabs ── */
+  .tabs{display:flex;gap:6px;margin-bottom:14px}
+  .tab{flex:1;padding:8px;border-radius:8px;border:none;font-family:inherit;font-size:12px;
+       font-weight:600;cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.5px}
+  .tab.active{background:var(--accent);color:#0f0f13}
+  .tab:not(.active){background:var(--surface2);color:var(--sub)}
+
+  /* ── Empty state ── */
+  .empty{text-align:center;padding:48px 20px;color:var(--sub)}
+  .empty-icon{font-size:40px;margin-bottom:12px}
+
+  /* ── Toast ── */
+  .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-80px);
+         background:var(--surface);border:1px solid var(--accent);color:var(--accent);
+         padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:999;
+         transition:transform .3s ease}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+
+  .section-title{font-size:13px;font-weight:600;color:var(--sub);text-transform:uppercase;
+                 letter-spacing:.8px;margin:16px 0 8px}
+  .delete-icon{font-size:16px}
+  .edit-icon{font-size:16px}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="pages">
+
+    <!-- ══════════════════════════════════════════════
+         PAGE: DASHBOARD / EXPENSES VIZ
+    ══════════════════════════════════════════════ -->
+    <div class="page active" id="page-dash">
+      <h1>Finance</h1>
+      <p class="sub" style="margin-bottom:16px" id="dash-subtitle">Loading…</p>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-val" id="stat-month-total">—</div>
+          <div class="stat-label">This month</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="stat-cat-top">—</div>
+          <div class="stat-label">Top category</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Monthly Spending</h2>
+        <div class="chart-wrap"><canvas id="chart-monthly"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h2>By Category (All Time)</h2>
+        <div class="chart-wrap"><canvas id="chart-alltime-pie"></canvas></div>
+      </div>
+
+      <div class="section-title">Last 3 Months Breakdown</div>
+      <div class="charts-row" id="monthly-pies"></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         PAGE: EXPENSES LIST
+    ══════════════════════════════════════════════ -->
+    <div class="page" id="page-expenses">
+      <h1>Expenses</h1>
+      <p class="sub" style="margin-bottom:14px">Daily spending records</p>
+      <div id="expenses-list"><div class="empty"><div class="empty-icon">🧾</div>No expenses yet</div></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         PAGE: PORTFOLIO
+    ══════════════════════════════════════════════ -->
+    <div class="page" id="page-portfolio">
+      <h1>Portfolio</h1>
+      <p class="sub" style="margin-bottom:14px">Holdings & allocation</p>
+
+      <div class="card">
+        <h2>Asset Allocation</h2>
+        <div class="chart-wrap"><canvas id="chart-alloc-pie"></canvas></div>
+      </div>
+
+      <div class="alloc-bar" id="alloc-bar"></div>
+
+      <div class="section-title">Holdings</div>
+      <div id="holdings-list"><div class="empty"><div class="empty-icon">📈</div>No trades yet</div></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
+         PAGE: TRADES LIST
+    ══════════════════════════════════════════════ -->
+    <div class="page" id="page-trades">
+      <h1>Trades</h1>
+      <p class="sub" style="margin-bottom:14px">Investment history</p>
+      <div id="trades-list"><div class="empty"><div class="empty-icon">💹</div>No trades yet</div></div>
+    </div>
+
+  </div><!-- /pages -->
+
+  <!-- Bottom nav -->
+  <nav>
+    <button class="active" onclick="goPage('dash',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </button>
+    <button onclick="goPage('expenses',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+      Expenses
+    </button>
+    <button onclick="goPage('portfolio',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Portfolio
+    </button>
+    <button onclick="goPage('trades',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      Trades
+    </button>
+  </nav>
+</div>
+
+<!-- FAB -->
+<button class="fab" id="fab" onclick="openAddSheet()">+</button>
+
+<!-- ════════════ MODAL SHEET ════════════ -->
+<div class="overlay" id="overlay" onclick="closeSheet(event)">
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="sheet-title">Add Transaction</div>
+
+    <!-- Type tabs -->
+    <div class="tabs" id="type-tabs">
+      <button class="tab active" onclick="switchType('expense',this)">Expense</button>
+      <button class="tab" onclick="switchType('investment',this)">Investment</button>
+    </div>
+
+    <!-- ── Expense form ── -->
+    <div id="form-expense">
+      <div class="form-grid">
+        <div class="full">
+          <label>Date</label>
+          <input type="date" id="e-date"/>
+        </div>
+        <div>
+          <label>Amount (RM)</label>
+          <input type="number" id="e-amount" step="0.01" placeholder="0.00"/>
+        </div>
+        <div>
+          <label>Payment</label>
+          <select id="e-payment">
+            <option value="ewallet">eWallet</option>
+            <option value="credit">Credit</option>
+            <option value="debit">Debit</option>
+            <option value="cash">Cash</option>
+            <option value="tng">TnG</option>
+            <option value="ryt">Ryt</option>
+          </select>
+        </div>
+        <div>
+          <label>Category</label>
+          <select id="e-category">
+            <option value="food">Food</option>
+            <option value="transport">Transport</option>
+            <option value="utilities">Utilities</option>
+            <option value="health">Health</option>
+            <option value="entertainment">Entertainment</option>
+            <option value="shopping">Shopping</option>
+            <option value="misc">Misc</option>
+          </select>
+        </div>
+        <div>
+          <label>Subcategory</label>
+          <input type="text" id="e-subcategory" placeholder="e.g. lunch"/>
+        </div>
+        <div class="full">
+          <label>Description</label>
+          <input type="text" id="e-description" placeholder="What was it?"/>
+        </div>
+        <div class="full" style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="e-recurring" style="width:18px;height:18px;accent-color:var(--accent)"/>
+          <label for="e-recurring" style="margin:0;font-size:13px;text-transform:none;letter-spacing:0">Recurring expense</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Investment form ── -->
+    <div id="form-investment" style="display:none">
+      <div class="form-grid">
+        <div class="full">
+          <label>Date</label>
+          <input type="date" id="i-date"/>
+        </div>
+        <div>
+          <label>Ticker</label>
+          <input type="text" id="i-ticker" placeholder="e.g. SPY" style="text-transform:uppercase"/>
+        </div>
+        <div>
+          <label>Action</label>
+          <select id="i-action">
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+          </select>
+        </div>
+        <div>
+          <label>Asset Class</label>
+          <select id="i-asset-class">
+            <option value="index_fund">Index Fund</option>
+            <option value="us_stock">US Stock</option>
+            <option value="dividend_my">Dividend MY</option>
+            <option value="gold_etf">Gold ETF</option>
+            <option value="crypto">Crypto</option>
+          </select>
+        </div>
+        <div>
+          <label>Brokerage</label>
+          <select id="i-brokerage">
+            <option value="ibkr">IBKR</option>
+            <option value="rakuten">Rakuten</option>
+            <option value="luno">Luno</option>
+            <option value="moomoo">Moomoo</option>
+          </select>
+        </div>
+        <div>
+          <label>Quantity</label>
+          <input type="number" id="i-quantity" step="any" placeholder="0"/>
+        </div>
+        <div>
+          <label>Price / Unit</label>
+          <input type="number" id="i-price" step="any" placeholder="0.00"/>
+        </div>
+        <div>
+          <label>Fees</label>
+          <input type="number" id="i-fees" step="any" placeholder="0.00" value="0"/>
+        </div>
+        <div>
+          <label>Currency</label>
+          <select id="i-currency">
+            <option value="MYR">MYR</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+        <div>
+          <label>FX Rate (if USD)</label>
+          <input type="number" id="i-fxrate" step="any" placeholder="e.g. 4.50"/>
+        </div>
+        <div class="full">
+          <label>Notes</label>
+          <input type="text" id="i-notes" placeholder="Optional note"/>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:12px"></div>
+    <button class="btn btn-primary" id="submit-btn" onclick="submitForm()">Save</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let currentPage = 'dash';
+let currentType = 'expense';
+let editingId   = null;
+let editingType = null;
+let charts      = {};
+
+const PALETTE = ['#c8f135','#4fc9f5','#f5a623','#e05c7a','#a78bfa','#34d399','#fb923c','#f472b6'];
+const CAT_COLOR = {};
+const CATS = ['food','transport','utilities','health','entertainment','shopping','misc'];
+CATS.forEach((c,i) => CAT_COLOR[c] = PALETTE[i % PALETTE.length]);
+
+// ── Navigation ─────────────────────────────────────────────────────────────────
+function goPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+  currentPage = name;
+  if (name === 'dash')      loadDash();
+  if (name === 'expenses')  loadExpenses();
+  if (name === 'portfolio') loadPortfolio();
+  if (name === 'trades')    loadTrades();
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ── Sheet ──────────────────────────────────────────────────────────────────────
+function openAddSheet() {
+  editingId = null; editingType = null;
+  document.getElementById('sheet-title').textContent = 'Add Transaction';
+  document.getElementById('type-tabs').style.display = 'flex';
+  resetForms();
+  setToday();
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeSheet(e) {
+  if (!e || e.target === document.getElementById('overlay'))
+    document.getElementById('overlay').classList.remove('open');
+}
+
+function setToday() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('e-date').value = today;
+  document.getElementById('i-date').value = today;
+}
+
+function switchType(type, btn) {
+  currentType = type;
+  document.querySelectorAll('#type-tabs .tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('form-expense').style.display    = type === 'expense'    ? '' : 'none';
+  document.getElementById('form-investment').style.display = type === 'investment' ? '' : 'none';
+}
+
+function resetForms() {
+  ['e-amount','e-subcategory','e-description'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('e-recurring').checked = false;
+  document.getElementById('e-category').value = 'food';
+  document.getElementById('e-payment').value = 'ryt';
+  ['i-ticker','i-quantity','i-price','i-notes','i-fxrate'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('i-fees').value = '0';
+  document.getElementById('i-currency').value = 'MYR';
+  document.getElementById('i-action').value = 'buy';
+  document.getElementById('i-asset-class').value = 'index_fund';
+  document.getElementById('i-brokerage').value = 'ibkr';
+  switchType('expense', document.querySelector('#type-tabs .tab'));
+}
+
+// ── Submit ─────────────────────────────────────────────────────────────────────
+async function submitForm() {
+  const type = editingType || currentType;
+  const isEdit = !!editingId;
+  let url, body;
+
+  if (type === 'expense') {
+    body = {
+      date:           document.getElementById('e-date').value,
+      amount:         parseFloat(document.getElementById('e-amount').value),
+      category:       document.getElementById('e-category').value,
+      subcategory:    document.getElementById('e-subcategory').value || null,
+      description:    document.getElementById('e-description').value || null,
+      payment_method: document.getElementById('e-payment').value,
+      is_recurring:   document.getElementById('e-recurring').checked,
+    };
+    url = isEdit ? `/api/expenses/${editingId}` : '/api/expenses';
+  } else {
+    const fxVal = document.getElementById('i-fxrate').value;
+    body = {
+      date:        document.getElementById('i-date').value,
+      ticker:      document.getElementById('i-ticker').value.toUpperCase(),
+      asset_class: document.getElementById('i-asset-class').value,
+      action:      document.getElementById('i-action').value,
+      quantity:    parseFloat(document.getElementById('i-quantity').value),
+      price:       parseFloat(document.getElementById('i-price').value),
+      fees:        parseFloat(document.getElementById('i-fees').value) || 0,
+      currency:    document.getElementById('i-currency').value,
+      fx_rate:     fxVal ? parseFloat(fxVal) : null,
+      brokerage:   document.getElementById('i-brokerage').value,
+      notes:       document.getElementById('i-notes').value || null,
+    };
+    url = isEdit ? `/api/investments/${editingId}` : '/api/investments';
+  }
+
+  const method = isEdit ? 'PUT' : 'POST';
+  const res = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (!res.ok) { toast('❌ Error saving'); return; }
+
+  closeSheet(null);
+  toast(isEdit ? '✅ Updated' : '✅ Saved');
+  if (currentPage === 'dash')      loadDash();
+  if (currentPage === 'expenses')  loadExpenses();
+  if (currentPage === 'portfolio') loadPortfolio();
+  if (currentPage === 'trades')    loadTrades();
+}
+
+// ── Edit ───────────────────────────────────────────────────────────────────────
+function editExpense(row) {
+  editingId = row.id; editingType = 'expense';
+  document.getElementById('sheet-title').textContent = 'Edit Expense';
+  document.getElementById('type-tabs').style.display = 'none';
+  document.getElementById('form-expense').style.display = '';
+  document.getElementById('form-investment').style.display = 'none';
+  document.getElementById('e-date').value        = row.date;
+  document.getElementById('e-amount').value      = row.amount;
+  document.getElementById('e-category').value    = row.category;
+  document.getElementById('e-subcategory').value = row.subcategory || '';
+  document.getElementById('e-description').value = row.description || '';
+  document.getElementById('e-payment').value     = row.payment_method;
+  document.getElementById('e-recurring').checked = row.is_recurring;
+  document.getElementById('overlay').classList.add('open');
+}
+
+function editTrade(row) {
+  editingId = row.id; editingType = 'investment';
+  document.getElementById('sheet-title').textContent = 'Edit Trade';
+  document.getElementById('type-tabs').style.display = 'none';
+  document.getElementById('form-expense').style.display = 'none';
+  document.getElementById('form-investment').style.display = '';
+  document.getElementById('i-date').value        = row.date;
+  document.getElementById('i-ticker').value      = row.ticker;
+  document.getElementById('i-asset-class').value = row.asset_class;
+  document.getElementById('i-action').value      = row.action;
+  document.getElementById('i-quantity').value    = row.quantity;
+  document.getElementById('i-price').value       = row.price;
+  document.getElementById('i-fees').value        = row.fees;
+  document.getElementById('i-currency').value    = row.currency;
+  document.getElementById('i-fxrate').value      = row.fx_rate || '';
+  document.getElementById('i-brokerage').value   = row.brokerage;
+  document.getElementById('i-notes').value       = row.notes || '';
+  document.getElementById('overlay').classList.add('open');
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────────────
+async function deleteExpense(id) {
+  if (!confirm('Delete this expense?')) return;
+  await fetch(`/api/expenses/${id}`, {method:'DELETE'});
+  toast('🗑 Deleted'); loadExpenses(); loadDash();
+}
+async function deleteTrade(id) {
+  if (!confirm('Delete this trade?')) return;
+  await fetch(`/api/investments/${id}`, {method:'DELETE'});
+  toast('🗑 Deleted'); loadTrades(); loadPortfolio();
+}
+
+// ── Chart helpers ──────────────────────────────────────────────────────────────
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+Chart.defaults.color = '#888899';
+Chart.defaults.font.family = "'SF Mono', ui-monospace, monospace";
+
+function makeBarChart(canvasId, labels, data) {
+  destroyChart(canvasId);
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  charts[canvasId] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: '#c8f135cc',
+        borderColor: '#c8f135',
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` RM ${ctx.parsed.y.toFixed(2)}` } } },
+      scales: {
+        x: { grid: { color: '#2a2a38' }, ticks: { color: '#888899' } },
+        y: { grid: { color: '#2a2a38' }, ticks: { color: '#888899', callback: v => `RM ${v}` } }
+      }
+    }
+  });
+}
+
+function makePieChart(canvasId, labels, data, colors) {
+  destroyChart(canvasId);
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  charts[canvasId] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors, borderColor: '#0f0f13', borderWidth: 2 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '55%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#888899', padding: 10, font: { size: 10 } } },
+        tooltip: { callbacks: { label: ctx => ` RM ${ctx.parsed.toFixed(2)}` } }
+      }
+    }
+  });
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────────
+async function loadDash() {
+  const data = await fetch('/api/analytics/expenses').then(r => r.json());
+
+  // Stats
+  const now = new Date();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const monthRow = data.monthly.find(m => m.month === curMonth);
+  document.getElementById('stat-month-total').textContent = monthRow ? `RM ${monthRow.total.toFixed(0)}` : 'RM 0';
+  document.getElementById('dash-subtitle').textContent = `${curMonth} · ${data.by_category.length} categories`;
+  document.getElementById('stat-cat-top').textContent = data.by_category[0]?.category?.toUpperCase() || '—';
+
+  // Monthly bar
+  if (data.monthly.length) {
+    makeBarChart('chart-monthly', data.monthly.map(m => m.month), data.monthly.map(m => m.total));
+  }
+
+  // All-time pie
+  if (data.by_category.length) {
+    makePieChart('chart-alltime-pie',
+      data.by_category.map(c => c.category),
+      data.by_category.map(c => c.total),
+      data.by_category.map(c => CAT_COLOR[c.category] || PALETTE[0])
+    );
+  }
+
+  // Last 3 month pies
+  const allMonths = [...new Set(data.monthly_by_category.map(r => r.month))].sort().slice(-3);
+  const container = document.getElementById('monthly-pies');
+  container.innerHTML = '';
+  allMonths.forEach(month => {
+    const rows = data.monthly_by_category.filter(r => r.month === month);
+    const total = rows.reduce((s,r) => s + r.total, 0);
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `<h3>${month}</h3><div class="sub" style="margin-bottom:8px">RM ${total.toFixed(2)}</div>
+      <div class="chart-wrap-sm"><canvas id="pie-${month}"></canvas></div>`;
+    container.appendChild(div);
+    requestAnimationFrame(() => {
+      makePieChart(`pie-${month}`, rows.map(r => r.category), rows.map(r => r.total),
+        rows.map(r => CAT_COLOR[r.category] || PALETTE[0]));
+    });
+  });
+}
+
+// ── Expenses list ──────────────────────────────────────────────────────────────
+async function loadExpenses() {
+  const data = await fetch('/api/expenses').then(r => r.json());
+  const el = document.getElementById('expenses-list');
+  if (!data.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">🧾</div>No expenses yet</div>'; return; }
+
+  // Group by month
+  const groups = {};
+  data.forEach(e => {
+    const m = e.date.slice(0,7);
+    if (!groups[m]) groups[m] = [];
+    groups[m].push(e);
+  });
+
+  el.innerHTML = Object.entries(groups).sort((a,b) => b[0].localeCompare(a[0])).map(([month, rows]) => {
+    const total = rows.reduce((s,r) => s + r.amount, 0);
+    return `<div class="section-title">${month} · <span style="color:var(--accent)">RM ${total.toFixed(2)}</span></div>
+    <div class="card" style="padding:4px 12px">
+      ${rows.map(e => `
+        <div class="row">
+          <div class="row-left">
+            <div class="row-title">${e.description || e.subcategory || e.category}</div>
+            <div class="row-meta">${e.date} · <span class="pill pill-cat">${e.category}</span> · ${e.payment_method}</div>
+          </div>
+          <div class="row-right">
+            <div class="row-amount" style="color:var(--text)">RM ${e.amount.toFixed(2)}</div>
+          </div>
+          <div class="row-actions">
+            <button class="btn btn-ghost btn-sm" onclick='editExpense(${JSON.stringify(e)})'>✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteExpense('${e.id}')">🗑</button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+// ── Portfolio ──────────────────────────────────────────────────────────────────
+async function loadPortfolio() {
+  const data = await fetch('/api/analytics/portfolio').then(r => r.json());
+
+  // Alloc pie
+  if (data.allocation?.length) {
+    makePieChart('chart-alloc-pie',
+      data.allocation.map(a => a.asset_class),
+      data.allocation.map(a => a.total_cost),
+      PALETTE.slice(0, data.allocation.length)
+    );
+  }
+
+  // Alloc bar
+  const totalCost = data.allocation?.reduce((s,a) => s + a.total_cost, 0) || 1;
+  document.getElementById('alloc-bar').innerHTML = (data.allocation||[]).map((a,i) =>
+    `<div class="alloc-seg" style="width:${(a.total_cost/totalCost*100).toFixed(1)}%;background:${PALETTE[i]}"></div>`
+  ).join('');
+
+  // Holdings list
+  const el = document.getElementById('holdings-list');
+  if (!data.holdings?.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">📈</div>No holdings yet</div>'; return; }
+
+  const groups = {};
+  data.holdings.forEach(h => {
+    if (!groups[h.asset_class]) groups[h.asset_class] = [];
+    groups[h.asset_class].push(h);
+  });
+
+  el.innerHTML = Object.entries(groups).map(([cls, rows]) => `
+    <div class="section-title">${cls.replace('_',' ').toUpperCase()}</div>
+    <div class="card" style="padding:4px 12px">
+      ${rows.map(h => `
+        <div class="row">
+          <div class="row-left">
+            <div class="row-title">${h.ticker}</div>
+            <div class="row-meta">avg ${h.avg_price.toFixed(4)} · qty ${h.net_qty}</div>
+          </div>
+          <div class="row-right">
+            <div class="row-amount" style="color:var(--accent2)">RM ${h.cost.toFixed(2)}</div>
+            <div class="sub">${((h.cost/totalCost)*100).toFixed(1)}% of portfolio</div>
+          </div>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+// ── Trades list ────────────────────────────────────────────────────────────────
+async function loadTrades() {
+  const data = await fetch('/api/investments').then(r => r.json());
+  const el = document.getElementById('trades-list');
+  if (!data.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">💹</div>No trades yet</div>'; return; }
+
+  const groups = {};
+  data.forEach(t => {
+    const m = t.date.slice(0,7);
+    if (!groups[m]) groups[m] = [];
+    groups[m].push(t);
+  });
+
+  el.innerHTML = Object.entries(groups).sort((a,b) => b[0].localeCompare(a[0])).map(([month, rows]) => `
+    <div class="section-title">${month}</div>
+    <div class="card" style="padding:4px 12px">
+      ${rows.map(t => {
+        const total = (t.quantity * t.price + t.fees).toFixed(2);
+        return `<div class="row">
+          <div class="row-left">
+            <div class="row-title">${t.ticker} <span class="pill pill-${t.action}">${t.action.toUpperCase()}</span></div>
+            <div class="row-meta">${t.date} · ${t.quantity} units @ ${t.price} ${t.currency} · ${t.brokerage}</div>
+          </div>
+          <div class="row-right">
+            <div class="row-amount" style="color:${t.action==='buy'?'var(--accent2)':'var(--accent)'}">${t.currency} ${total}</div>
+          </div>
+          <div class="row-actions">
+            <button class="btn btn-ghost btn-sm" onclick='editTrade(${JSON.stringify(t)})'>✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteTrade('${t.id}')">🗑</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+setToday();
+loadDash();
+</script>
+</body>
+</html>

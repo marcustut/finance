@@ -5,6 +5,7 @@ description = "Tracking personal finance."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "fastapi[standard]>=0.135.1",
     "marimo>=0.20.4",
     "matplotlib>=3.10.8",
     "polars>=1.38.1",

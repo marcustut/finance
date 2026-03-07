@@ -32,15 +32,15 @@ def _(Expense, date, now, uid):
     expenses = [
         Expense(
             id=uid(),
-            date=date(2026, 3, 5),
-            amount=31.95,
+            date=date(2026, 3, 7),
+            amount=11.50,
             category="food",
-            subcategory="grocery",
-            description="Heromart (eggs, milk)",
-            payment_method="tng",
+            subcategory="breakfast",
+            description="Chicken rice",
+            payment_method="ryt",
             is_recurring=False,
             created_at=now(),
-        )
+        ),
     ]
     return (expenses,)
 
@@ -51,7 +51,6 @@ def _(DATA_DIR, Expense, expenses, pl):
     edf = (
         pl.read_parquet(f"{DATA_DIR}/expense.parquet")
         .vstack(Expense.make_df(expenses))
-        .sort("date")
         .unique(
             [
                 "date",
@@ -64,6 +63,7 @@ def _(DATA_DIR, Expense, expenses, pl):
             ],
             keep="first",
         )
+        .sort("date", "id")
     )
     edf
     return (edf,)
