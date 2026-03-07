@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Dark background with rounded corners -->
+  <rect width="32" height="32" rx="7" fill="#0f0f13"/>
+  <!-- Rising bar chart — finance growth motif -->
+  <!-- Bar 1 (short, blue accent) -->
+  <rect x="3" y="22" width="7" height="7" rx="1.5" fill="#4fc9f5"/>
+  <!-- Bar 2 (medium, lime accent dimmed) -->
+  <rect x="12.5" y="15" width="7" height="14" rx="1.5" fill="#c8f135" opacity="0.7"/>
+  <!-- Bar 3 (tall, full lime accent) -->
+  <rect x="22" y="7" width="7" height="22" rx="1.5" fill="#c8f135"/>
+</svg>
