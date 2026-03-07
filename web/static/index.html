@@ -723,17 +723,23 @@ async function loadPortfolio() {
   el.innerHTML = Object.entries(groups).map(([cls, rows]) => `
     <div class="section-title">${cls.replace('_',' ').toUpperCase()}</div>
     <div class="card" style="padding:4px 12px">
-      ${rows.map(h => `
+      ${rows.map(h => {
+        const isUsd = h.currency === 'USD';
+        const avgLabel = isUsd
+          ? `avg ${h.avg_price.toFixed(4)} MYR/unit (USD×FX)`
+          : `avg ${h.avg_price.toFixed(4)} · qty ${h.net_qty}`;
+        return `
         <div class="row">
           <div class="row-left">
-            <div class="row-title">${h.ticker}</div>
-            <div class="row-meta">avg ${h.avg_price.toFixed(4)} · qty ${h.net_qty}</div>
+            <div class="row-title">${h.ticker}${isUsd ? ' <span class="pill pill-cat">USD</span>' : ''}</div>
+            <div class="row-meta">${avgLabel} · qty ${h.net_qty}</div>
           </div>
           <div class="row-right">
             <div class="row-amount" style="color:var(--accent2)">RM ${h.cost.toFixed(2)}</div>
             <div class="sub">${((h.cost/totalCost)*100).toFixed(1)}% of portfolio</div>
           </div>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>`).join('');
 }
 

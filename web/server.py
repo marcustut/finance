@@ -296,13 +296,24 @@ def portfolio_analytics():
     if df.is_empty():
         return {"holdings": [], "allocation": [], "trades": []}
 
+    # Convert each trade's cost to MYR before aggregating
+    df = df.with_columns(
+        pl.when(
+            (pl.col("currency") == "USD") & pl.col("fx_rate").is_not_null()
+        )
+        .then((pl.col("quantity") * pl.col("price") + pl.col("fees")) * pl.col("fx_rate"))
+        .otherwise(pl.col("quantity") * pl.col("price") + pl.col("fees"))
+        .alias("cost_myr")
+    )
+
     # Net holdings: buys - sells per ticker
     buys = (
         df.filter(pl.col("action") == "buy")
         .group_by("ticker", "asset_class")
         .agg(
             pl.col("quantity").sum().alias("bought"),
-            (pl.col("quantity") * pl.col("price") + pl.col("fees")).sum().alias("cost"),
+            pl.col("cost_myr").sum().alias("cost"),
+            pl.col("currency").first().alias("currency"),
         )
     )
     sells = (
@@ -336,6 +347,7 @@ def portfolio_analytics():
     return {
         "holdings": holdings.with_columns(
             pl.col("asset_class").cast(pl.String),
+            pl.col("currency").cast(pl.String),
             pl.col("avg_price").round(4),
             pl.col("cost").round(2),
         ).to_dicts(),
