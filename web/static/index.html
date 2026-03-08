@@ -791,9 +791,11 @@ async function loadPortfolio() {
     return;
   }
 
-  // Fetch live prices
-  const tickers = [...new Set(data.holdings.map(h => h.ticker))].join(',');
-  const priceData = await fetch(`/api/prices?tickers=${encodeURIComponent(tickers)}`).then(r => r.json());
+  // Fetch live prices (skip V- cash reserve tickers)
+  const priceTickers = [...new Set(
+    data.holdings.filter(h => !h.ticker.startsWith('V-')).map(h => h.ticker)
+  )].join(',');
+  const priceData = await fetch(`/api/prices?tickers=${encodeURIComponent(priceTickers)}`).then(r => r.json());
   const prices = priceData.prices || {};
   const usdmyr = priceData.usdmyr ?? null;
 
@@ -806,7 +808,11 @@ async function loadPortfolio() {
   }
 
   // Enrich holdings: currentValue + P&L in MYR; null when price/rate missing
+  // V- cash reserves: current value = cost (no price movement)
   const holdings = data.holdings.map(h => {
+    if (h.ticker.startsWith('V-')) {
+      return { ...h, currentValue: h.cost, pnl: 0, pnlPct: 0 };
+    }
     const rawPrice = prices[h.ticker];
     let currentValue = null;
     if (rawPrice != null) {
