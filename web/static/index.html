@@ -197,8 +197,16 @@
          PAGE: PORTFOLIO
     ══════════════════════════════════════════════ -->
     <div class="page" id="page-portfolio">
-      <h1>Portfolio</h1>
-      <p class="sub" style="margin-bottom:14px">Holdings & allocation</p>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <h1>Portfolio</h1>
+          <p class="sub">Holdings & allocation</p>
+        </div>
+        <div id="portfolio-currency-toggle" style="display:flex;gap:6px;margin-top:6px">
+          <button class="tab active" id="curr-myr" onclick="setPortfolioCurrency('MYR',this)" style="flex:none;padding:6px 14px">MYR</button>
+          <button class="tab" id="curr-usd" onclick="setPortfolioCurrency('USD',this)" style="flex:none;padding:6px 14px">USD</button>
+        </div>
+      </div>
 
       <div class="stats">
         <div class="stat">
@@ -209,6 +217,10 @@
           <div class="stat-val" id="stat-top-holding">—</div>
           <div class="stat-label">Top holding</div>
         </div>
+        <div class="stat" style="grid-column:1/-1">
+          <div class="stat-val" id="stat-performance">—</div>
+          <div class="stat-label">Overall performance</div>
+        </div>
       </div>
 
       <div class="card">
@@ -217,6 +229,7 @@
       </div>
 
       <div class="alloc-bar" id="alloc-bar"></div>
+      <div id="alloc-legend" style="display:flex;flex-wrap:wrap;gap:4px 14px;padding:4px 0 12px"></div>
 
       <div class="section-title">Holdings</div>
       <div id="holdings-list"><div class="empty"><div class="empty-icon">📈</div>No trades yet</div></div>
@@ -400,6 +413,16 @@ let currentType = 'expense';
 let editingId   = null;
 let editingType = null;
 let charts      = {};
+
+let _portfolioData     = null;
+let _portfolioCurrency = 'MYR';
+
+function setPortfolioCurrency(cur, btn) {
+  _portfolioCurrency = cur;
+  document.querySelectorAll('#portfolio-currency-toggle .tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (_portfolioData) renderPortfolio();
+}
 
 const PALETTE = ['#c8f135','#4fc9f5','#f5a623','#e05c7a','#a78bfa','#34d399','#fb923c','#f472b6'];
 const CAT_COLOR = {};
@@ -601,7 +624,7 @@ function makeBarChart(canvasId, labels, data) {
   });
 }
 
-function makePieChart(canvasId, labels, data, colors) {
+function makePieChart(canvasId, labels, data, colors, prefix = 'RM ') {
   destroyChart(canvasId);
   const ctx = document.getElementById(canvasId).getContext('2d');
   charts[canvasId] = new Chart(ctx, {
@@ -615,7 +638,13 @@ function makePieChart(canvasId, labels, data, colors) {
       cutout: '55%',
       plugins: {
         legend: { position: 'bottom', labels: { color: '#888899', padding: 10, font: { size: 10 } } },
-        tooltip: { callbacks: { label: ctx => ` RM ${ctx.parsed.toFixed(2)}` } }
+        tooltip: { callbacks: {
+          label: ctx => {
+            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+            const pct = (ctx.parsed / total * 100).toFixed(1);
+            return ` ${prefix}${ctx.parsed.toFixed(2)} (${pct}%)`;
+          }
+        }}
       }
     }
   });
@@ -704,42 +733,82 @@ async function loadExpenses() {
 
 // ── Portfolio ──────────────────────────────────────────────────────────────────
 async function loadPortfolio() {
-  const el = document.getElementById('holdings-list');
+  const emptyStats = () => ['stat-equity','stat-top-holding','stat-performance']
+    .forEach(id => document.getElementById(id).textContent = '—');
+
   const data = await fetch('/api/analytics/portfolio').then(r => r.json());
 
   if (!data.holdings?.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">📈</div>No holdings yet</div>';
-    document.getElementById('stat-equity').textContent = '—';
-    document.getElementById('stat-top-holding').textContent = '—';
+    document.getElementById('holdings-list').innerHTML =
+      '<div class="empty"><div class="empty-icon">📈</div>No holdings yet</div>';
+    emptyStats();
     return;
   }
 
-  // Fetch live prices for all holdings
+  // Fetch live prices
   const tickers = [...new Set(data.holdings.map(h => h.ticker))].join(',');
   const priceData = await fetch(`/api/prices?tickers=${encodeURIComponent(tickers)}`).then(r => r.json());
-  const prices  = priceData.prices  || {};
-  const usdmyr  = priceData.usdmyr  || 4.5;
+  const prices = priceData.prices || {};
+  const usdmyr = priceData.usdmyr ?? null;
 
-  // Enrich each holding with current value + P&L (all in MYR)
+  if (usdmyr === null) {
+    toast('⚠️ Could not fetch USDMYR — USD holdings unavailable');
+    const usdBtn = document.getElementById('curr-usd');
+    usdBtn.disabled = true;
+    usdBtn.style.opacity = '0.35';
+    usdBtn.title = 'USDMYR rate unavailable';
+  }
+
+  // Enrich holdings: currentValue + P&L in MYR; null when price/rate missing
   const holdings = data.holdings.map(h => {
     const rawPrice = prices[h.ticker];
     let currentValue = null;
     if (rawPrice != null) {
-      const priceMyr = h.currency === 'USD' ? rawPrice * usdmyr : rawPrice;
-      currentValue = priceMyr * h.net_qty;
+      if (h.currency === 'USD') {
+        if (usdmyr != null) currentValue = rawPrice * usdmyr * h.net_qty;
+      } else {
+        currentValue = rawPrice * h.net_qty;
+      }
     }
     const pnl    = currentValue != null ? currentValue - h.cost : null;
     const pnlPct = pnl != null ? (pnl / h.cost) * 100 : null;
     return { ...h, currentValue, pnl, pnlPct };
   });
 
-  // Stats
-  const totalValue = holdings.reduce((s, h) => s + (h.currentValue ?? h.cost), 0);
-  const top = [...holdings].sort((a, b) => (b.currentValue ?? b.cost) - (a.currentValue ?? a.cost))[0];
-  document.getElementById('stat-equity').textContent = `RM ${totalValue.toFixed(0)}`;
-  document.getElementById('stat-top-holding').textContent = top?.ticker || '—';
+  _portfolioData = { holdings, usdmyr };
+  renderPortfolio();
+}
 
-  // Build allocation from current values (fall back to cost if price unavailable)
+function renderPortfolio() {
+  const { holdings, usdmyr } = _portfolioData;
+  const isMyr  = _portfolioCurrency === 'MYR';
+  const prefix = isMyr ? 'RM ' : 'USD ';
+  const rate   = usdmyr || 1;
+  const cvt    = v => v != null ? (isMyr ? v : v / rate) : null;
+
+  // Sort holdings high → low by current value (fallback to cost)
+  const sorted = [...holdings].sort(
+    (a, b) => (b.currentValue ?? b.cost) - (a.currentValue ?? a.cost)
+  );
+
+  // Totals
+  const totalMyr     = holdings.reduce((s, h) => s + (h.currentValue ?? h.cost), 0);
+  const totalCostMyr = holdings.reduce((s, h) => s + h.cost, 0);
+  const totalPnlMyr  = totalMyr - totalCostMyr;
+  const totalPnlPct  = (totalPnlMyr / totalCostMyr) * 100;
+
+  // Stats
+  document.getElementById('stat-equity').textContent =
+    `${prefix}${cvt(totalMyr).toFixed(0)}`;
+  document.getElementById('stat-top-holding').textContent =
+    sorted[0]?.ticker || '—';
+  const perfEl   = document.getElementById('stat-performance');
+  const perfSign = totalPnlMyr >= 0 ? '+' : '';
+  perfEl.style.color = totalPnlMyr >= 0 ? 'var(--accent)' : 'var(--red)';
+  perfEl.textContent =
+    `${perfSign}${prefix}${cvt(totalPnlMyr).toFixed(0)} (${perfSign}${totalPnlPct.toFixed(1)}%)`;
+
+  // Allocation by current value, grouped by asset class
   const allocMap = {};
   holdings.forEach(h => {
     const v = h.currentValue ?? h.cost;
@@ -749,22 +818,37 @@ async function loadPortfolio() {
 
   makePieChart('chart-alloc-pie',
     allocEntries.map(([cls]) => cls),
-    allocEntries.map(([, v]) => v),
-    PALETTE.slice(0, allocEntries.length)
+    allocEntries.map(([, v]) => cvt(v)),
+    PALETTE.slice(0, allocEntries.length),
+    prefix
   );
 
   document.getElementById('alloc-bar').innerHTML = allocEntries.map(([, v], i) =>
-    `<div class="alloc-seg" style="width:${(v/totalValue*100).toFixed(1)}%;background:${PALETTE[i]}"></div>`
+    `<div class="alloc-seg" style="width:${(v/totalMyr*100).toFixed(1)}%;background:${PALETTE[i]}"></div>`
   ).join('');
 
-  // Holdings list grouped by asset class
+  // Allocation % legend
+  document.getElementById('alloc-legend').innerHTML = allocEntries.map(([cls, v], i) =>
+    `<span style="font-size:11px;color:var(--sub)">
+       <span style="color:${PALETTE[i]}">●</span>
+       ${cls.replace(/_/g,' ')}
+       <span style="color:var(--text);font-weight:600">${(v/totalMyr*100).toFixed(1)}%</span>
+     </span>`
+  ).join('');
+
+  // Holdings list grouped by asset class, groups sorted by total value
   const groups = {};
-  holdings.forEach(h => {
+  sorted.forEach(h => {
     if (!groups[h.asset_class]) groups[h.asset_class] = [];
     groups[h.asset_class].push(h);
   });
+  const groupEntries = Object.entries(groups).sort((a, b) => {
+    const sumA = a[1].reduce((s, h) => s + (h.currentValue ?? h.cost), 0);
+    const sumB = b[1].reduce((s, h) => s + (h.currentValue ?? h.cost), 0);
+    return sumB - sumA;
+  });
 
-  el.innerHTML = Object.entries(groups).map(([cls, rows]) => `
+  document.getElementById('holdings-list').innerHTML = groupEntries.map(([cls, rows]) => `
     <div class="section-title">${cls.replace(/_/g,' ').toUpperCase()}</div>
     <div class="card" style="padding:4px 12px">
       ${rows.map(h => {
@@ -776,13 +860,13 @@ async function loadPortfolio() {
         <div class="row">
           <div class="row-left">
             <div class="row-title">${h.ticker}${isUsd ? ' <span class="pill pill-cat">USD</span>' : ''}</div>
-            <div class="row-meta">qty ${h.net_qty} · cost RM ${h.cost.toFixed(2)}</div>
+            <div class="row-meta">qty ${h.net_qty} · cost ${prefix}${cvt(h.cost).toFixed(2)}</div>
           </div>
           <div class="row-right">
             ${hasPrice
-              ? `<div class="row-amount" style="color:var(--accent2)">RM ${h.currentValue.toFixed(2)}</div>
-                 <div class="sub" style="color:${pnlColor}">${sign}RM ${h.pnl.toFixed(2)} (${sign}${h.pnlPct.toFixed(1)}%)</div>`
-              : `<div class="row-amount" style="color:var(--sub)">RM ${h.cost.toFixed(2)}</div>
+              ? `<div class="row-amount" style="color:var(--accent2)">${prefix}${cvt(h.currentValue).toFixed(2)}</div>
+                 <div class="sub" style="color:${pnlColor}">${sign}${prefix}${cvt(h.pnl).toFixed(2)} (${sign}${h.pnlPct.toFixed(1)}%)</div>`
+              : `<div class="row-amount" style="color:var(--sub)">${prefix}${cvt(h.cost).toFixed(2)}</div>
                  <div class="sub">cost basis</div>`}
           </div>
         </div>`;
