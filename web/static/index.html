@@ -134,6 +134,11 @@
   .empty{text-align:center;padding:48px 20px;color:var(--sub)}
   .empty-icon{font-size:40px;margin-bottom:12px}
 
+  /* ── Spinner ── */
+  .spinner{width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--accent);
+           border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 10px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
   /* ── Toast ── */
   .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-80px);
          background:var(--surface);border:1px solid var(--accent);color:var(--accent);
@@ -467,6 +472,12 @@ function toast(msg) {
   setTimeout(() => el.classList.remove('show'), 2200);
 }
 
+// ── Loading helper ─────────────────────────────────────────────────────────────
+function setLoading(id) {
+  document.getElementById(id).innerHTML =
+    '<div class="empty"><div class="spinner"></div>Loading…</div>';
+}
+
 // ── Sheet ──────────────────────────────────────────────────────────────────────
 function openAddSheet() {
   editingId = null; editingType = null;
@@ -669,6 +680,7 @@ function makePieChart(canvasId, labels, data, colors, prefix = 'RM ') {
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 async function loadDash() {
+  setLoading('monthly-pies');
   const [data, priceData] = await Promise.all([
     fetch('/api/analytics/expenses').then(r => r.json()),
     fetch('/api/prices').then(r => r.json()).catch(() => ({})),
@@ -744,6 +756,7 @@ function renderDash() {
 
 // ── Expenses list ──────────────────────────────────────────────────────────────
 async function loadExpenses() {
+  setLoading('expenses-list');
   const data = await fetch('/api/expenses').then(r => r.json());
   const el = document.getElementById('expenses-list');
   if (!data.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">🧾</div>No expenses yet</div>'; return; }
@@ -780,6 +793,7 @@ async function loadExpenses() {
 
 // ── Portfolio ──────────────────────────────────────────────────────────────────
 async function loadPortfolio() {
+  setLoading('holdings-list');
   const emptyStats = () => ['stat-equity','stat-top-holding','stat-performance']
     .forEach(id => document.getElementById(id).textContent = '—');
 
@@ -792,9 +806,11 @@ async function loadPortfolio() {
     return;
   }
 
-  // Fetch live prices
-  const tickers = [...new Set(data.holdings.map(h => h.ticker))].join(',');
-  const priceData = await fetch(`/api/prices?tickers=${encodeURIComponent(tickers)}`).then(r => r.json());
+  // Fetch live prices (skip V- cash reserve tickers)
+  const priceTickers = [...new Set(
+    data.holdings.filter(h => !h.ticker.startsWith('V-')).map(h => h.ticker)
+  )].join(',');
+  const priceData = await fetch(`/api/prices?tickers=${encodeURIComponent(priceTickers)}`).then(r => r.json());
   const prices = priceData.prices || {};
   const usdmyr = priceData.usdmyr ?? null;
 
@@ -807,7 +823,11 @@ async function loadPortfolio() {
   }
 
   // Enrich holdings: currentValue + P&L in MYR; null when price/rate missing
+  // V- cash reserves: current value = cost (no price movement)
   const holdings = data.holdings.map(h => {
+    if (h.ticker.startsWith('V-')) {
+      return { ...h, currentValue: h.cost, pnl: 0, pnlPct: 0 };
+    }
     const rawPrice = prices[h.ticker];
     let currentValue = null;
     if (rawPrice != null) {
@@ -923,6 +943,7 @@ function renderPortfolio() {
 
 // ── Trades list ────────────────────────────────────────────────────────────────
 async function loadTrades() {
+  setLoading('trades-list');
   const data = await fetch('/api/investments').then(r => r.json());
   const el = document.getElementById('trades-list');
   if (!data.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">💹</div>No trades yet</div>'; return; }
