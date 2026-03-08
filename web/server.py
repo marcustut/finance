@@ -309,7 +309,7 @@ def portfolio_analytics():
         .alias("cost_myr")
     )
 
-    # Net holdings: buys - sells per ticker
+    # Net holdings: buys - sells per ticker; dividends add units but not cost
     buys = (
         df.filter(pl.col("action") == "buy")
         .group_by("ticker", "asset_class")
@@ -326,13 +326,25 @@ def portfolio_analytics():
             pl.col("quantity").sum().alias("sold"),
         )
     )
+    # Dividend trades: units reinvested + total yield in MYR (excluded from cost basis)
+    divs = (
+        df.filter(pl.col("action") == "dividend")
+        .group_by("ticker")
+        .agg(
+            pl.col("quantity").sum().alias("div_qty"),
+            pl.col("cost_myr").sum().round(2).alias("dividends_received"),
+        )
+    )
     holdings = (
         buys.join(sells, on="ticker", how="left")
+        .join(divs, on="ticker", how="left")
         .with_columns(
             pl.col("sold").fill_null(0),
+            pl.col("div_qty").fill_null(0.0),
+            pl.col("dividends_received").fill_null(0.0),
         )
         .with_columns(
-            (pl.col("bought") - pl.col("sold")).alias("net_qty"),
+            (pl.col("bought") + pl.col("div_qty") - pl.col("sold")).alias("net_qty"),
             (pl.col("cost") / pl.col("bought")).alias("avg_price"),
         )
         .filter(pl.col("net_qty") > 0)
@@ -353,6 +365,7 @@ def portfolio_analytics():
             pl.col("currency").cast(pl.String),
             pl.col("avg_price").round(4),
             pl.col("cost").round(2),
+            pl.col("dividends_received").round(2),
         ).to_dicts(),
         "allocation": alloc,
     }

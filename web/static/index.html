@@ -77,6 +77,7 @@
   .pill{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
   .pill-buy{background:#1a3a1a;color:#4ade80}
   .pill-sell{background:#3a1a1a;color:#f87171}
+  .pill-dividend{background:#1a2f3a;color:#4fc9f5}
   .pill-cat{background:var(--surface2);color:var(--sub)}
 
   /* ── List rows ── */
@@ -359,6 +360,7 @@
           <select id="i-action">
             <option value="buy">Buy</option>
             <option value="sell">Sell</option>
+            <option value="dividend">Dividend</option>
           </select>
         </div>
         <div>
@@ -822,10 +824,19 @@ async function loadPortfolio() {
   }
 
   // Enrich holdings: currentValue + P&L in MYR; null when price/rate missing
-  // V- cash reserves: current value = cost (no price movement)
+  // V- fixed-price assets (RM1 face value): net_qty includes reinvested dividend units,
+  // so currentValue = net_qty × 1.0 and pnl naturally equals dividends_received.
   const holdings = data.holdings.map(h => {
     if (h.ticker.startsWith('V-')) {
-      return { ...h, currentValue: h.cost, pnl: 0, pnlPct: 0 };
+      let currentValue = null;
+      if (h.currency === 'USD') {
+        if (usdmyr != null) currentValue = h.net_qty * usdmyr;
+      } else {
+        currentValue = h.net_qty * 1.0; // face value RM1 per unit
+      }
+      const pnl    = currentValue != null ? currentValue - h.cost : null;
+      const pnlPct = pnl != null && h.cost > 0 ? (pnl / h.cost) * 100 : null;
+      return { ...h, currentValue, pnl, pnlPct };
     }
     const rawPrice = prices[h.ticker];
     let currentValue = null;
@@ -958,14 +969,21 @@ async function loadTrades() {
     <div class="section-title">${month}</div>
     <div class="card" style="padding:4px 12px">
       ${rows.map(t => {
-        const total = (t.quantity * t.price + t.fees).toFixed(2);
+        const isDividend = t.action === 'dividend';
+        const pillClass  = isDividend ? 'pill-dividend' : `pill-${t.action}`;
+        const total      = (t.quantity * t.price + t.fees).toFixed(2);
+        const amtColor   = isDividend ? 'var(--accent2)'
+                         : t.action === 'buy' ? 'var(--accent2)' : 'var(--accent)';
+        const meta       = isDividend
+          ? `${t.date} · ${t.quantity} units @ ${t.price} ${t.currency}`
+          : `${t.date} · ${t.quantity} units @ ${t.price} ${t.currency} · ${t.brokerage}`;
         return `<div class="row">
           <div class="row-left">
-            <div class="row-title">${t.ticker} <span class="pill pill-${t.action}">${t.action.toUpperCase()}</span></div>
-            <div class="row-meta">${t.date} · ${t.quantity} units @ ${t.price} ${t.currency} · ${t.brokerage}</div>
+            <div class="row-title">${t.ticker} <span class="pill ${pillClass}">${t.action.toUpperCase()}</span></div>
+            <div class="row-meta">${meta}</div>
           </div>
           <div class="row-right">
-            <div class="row-amount" style="color:${t.action==='buy'?'var(--accent2)':'var(--accent)'}">${t.currency} ${total}</div>
+            <div class="row-amount" style="color:${amtColor}">${t.currency} ${total}</div>
           </div>
           <div class="row-actions">
             <button class="btn btn-ghost btn-sm" onclick='editTrade(${JSON.stringify(t)})'>✏️</button>
