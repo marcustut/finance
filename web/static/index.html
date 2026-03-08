@@ -200,6 +200,17 @@
       <h1>Portfolio</h1>
       <p class="sub" style="margin-bottom:14px">Holdings & allocation</p>
 
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-val" id="stat-equity">—</div>
+          <div class="stat-label">Current equity</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="stat-top-holding">—</div>
+          <div class="stat-label">Top holding</div>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Asset Allocation</h2>
         <div class="chart-wrap"><canvas id="chart-alloc-pie"></canvas></div>
@@ -693,50 +704,86 @@ async function loadExpenses() {
 
 // ── Portfolio ──────────────────────────────────────────────────────────────────
 async function loadPortfolio() {
+  const el = document.getElementById('holdings-list');
   const data = await fetch('/api/analytics/portfolio').then(r => r.json());
 
-  // Alloc pie
-  if (data.allocation?.length) {
-    makePieChart('chart-alloc-pie',
-      data.allocation.map(a => a.asset_class),
-      data.allocation.map(a => a.total_cost),
-      PALETTE.slice(0, data.allocation.length)
-    );
+  if (!data.holdings?.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📈</div>No holdings yet</div>';
+    document.getElementById('stat-equity').textContent = '—';
+    document.getElementById('stat-top-holding').textContent = '—';
+    return;
   }
 
-  // Alloc bar
-  const totalCost = data.allocation?.reduce((s,a) => s + a.total_cost, 0) || 1;
-  document.getElementById('alloc-bar').innerHTML = (data.allocation||[]).map((a,i) =>
-    `<div class="alloc-seg" style="width:${(a.total_cost/totalCost*100).toFixed(1)}%;background:${PALETTE[i]}"></div>`
+  // Fetch live prices for all holdings
+  const tickers = [...new Set(data.holdings.map(h => h.ticker))].join(',');
+  const priceData = await fetch(`/api/prices?tickers=${encodeURIComponent(tickers)}`).then(r => r.json());
+  const prices  = priceData.prices  || {};
+  const usdmyr  = priceData.usdmyr  || 4.5;
+
+  // Enrich each holding with current value + P&L (all in MYR)
+  const holdings = data.holdings.map(h => {
+    const rawPrice = prices[h.ticker];
+    let currentValue = null;
+    if (rawPrice != null) {
+      const priceMyr = h.currency === 'USD' ? rawPrice * usdmyr : rawPrice;
+      currentValue = priceMyr * h.net_qty;
+    }
+    const pnl    = currentValue != null ? currentValue - h.cost : null;
+    const pnlPct = pnl != null ? (pnl / h.cost) * 100 : null;
+    return { ...h, currentValue, pnl, pnlPct };
+  });
+
+  // Stats
+  const totalValue = holdings.reduce((s, h) => s + (h.currentValue ?? h.cost), 0);
+  const top = [...holdings].sort((a, b) => (b.currentValue ?? b.cost) - (a.currentValue ?? a.cost))[0];
+  document.getElementById('stat-equity').textContent = `RM ${totalValue.toFixed(0)}`;
+  document.getElementById('stat-top-holding').textContent = top?.ticker || '—';
+
+  // Build allocation from current values (fall back to cost if price unavailable)
+  const allocMap = {};
+  holdings.forEach(h => {
+    const v = h.currentValue ?? h.cost;
+    allocMap[h.asset_class] = (allocMap[h.asset_class] || 0) + v;
+  });
+  const allocEntries = Object.entries(allocMap).sort((a, b) => b[1] - a[1]);
+
+  makePieChart('chart-alloc-pie',
+    allocEntries.map(([cls]) => cls),
+    allocEntries.map(([, v]) => v),
+    PALETTE.slice(0, allocEntries.length)
+  );
+
+  document.getElementById('alloc-bar').innerHTML = allocEntries.map(([, v], i) =>
+    `<div class="alloc-seg" style="width:${(v/totalValue*100).toFixed(1)}%;background:${PALETTE[i]}"></div>`
   ).join('');
 
-  // Holdings list
-  const el = document.getElementById('holdings-list');
-  if (!data.holdings?.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">📈</div>No holdings yet</div>'; return; }
-
+  // Holdings list grouped by asset class
   const groups = {};
-  data.holdings.forEach(h => {
+  holdings.forEach(h => {
     if (!groups[h.asset_class]) groups[h.asset_class] = [];
     groups[h.asset_class].push(h);
   });
 
   el.innerHTML = Object.entries(groups).map(([cls, rows]) => `
-    <div class="section-title">${cls.replace('_',' ').toUpperCase()}</div>
+    <div class="section-title">${cls.replace(/_/g,' ').toUpperCase()}</div>
     <div class="card" style="padding:4px 12px">
       ${rows.map(h => {
-        const isUsd = h.currency === 'USD';
-        const avgLabel = isUsd
-          ? `avg ${h.avg_price.toFixed(4)} MYR/unit (USD×FX)`
-          : `avg ${h.avg_price.toFixed(4)} · qty ${h.net_qty}`;
+        const isUsd    = h.currency === 'USD';
+        const hasPrice = h.currentValue != null;
+        const pnlColor = h.pnl >= 0 ? 'var(--accent)' : 'var(--red)';
+        const sign     = h.pnl >= 0 ? '+' : '';
         return `
         <div class="row">
           <div class="row-left">
             <div class="row-title">${h.ticker}${isUsd ? ' <span class="pill pill-cat">USD</span>' : ''}</div>
-            <div class="row-meta">${avgLabel} · qty ${h.net_qty}</div>
+            <div class="row-meta">qty ${h.net_qty} · cost RM ${h.cost.toFixed(2)}</div>
           </div>
           <div class="row-right">
-            <div class="row-amount" style="color:var(--accent2)">RM ${h.cost.toFixed(2)}</div>
-            <div class="sub">${((h.cost/totalCost)*100).toFixed(1)}% of portfolio</div>
+            ${hasPrice
+              ? `<div class="row-amount" style="color:var(--accent2)">RM ${h.currentValue.toFixed(2)}</div>
+                 <div class="sub" style="color:${pnlColor}">${sign}RM ${h.pnl.toFixed(2)} (${sign}${h.pnlPct.toFixed(1)}%)</div>`
+              : `<div class="row-amount" style="color:var(--sub)">RM ${h.cost.toFixed(2)}</div>
+                 <div class="sub">cost basis</div>`}
           </div>
         </div>`;
       }).join('')}

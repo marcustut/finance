@@ -3,7 +3,10 @@ main.py — Finance Tracker API
 Run: uvicorn web.server:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import time
+
 import polars as pl
+import yfinance as yf
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -353,6 +356,35 @@ def portfolio_analytics():
         ).to_dicts(),
         "allocation": alloc,
     }
+
+
+# ── Live prices ────────────────────────────────────────────────────────────────
+
+_price_cache: dict[str, tuple[float | None, float]] = {}
+_CACHE_TTL = 300  # seconds
+
+
+def _get_price(ticker: str) -> float | None:
+    now = time.time()
+    if ticker in _price_cache:
+        price, ts = _price_cache[ticker]
+        if now - ts < _CACHE_TTL:
+            return price
+    try:
+        price = yf.Ticker(ticker).fast_info.last_price
+        result = float(price) if price is not None else None
+    except Exception:
+        result = None
+    _price_cache[ticker] = (result, now)
+    return result
+
+
+@app.get("/api/prices")
+def get_prices(tickers: str):
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    prices = {t: _get_price(t) for t in ticker_list}
+    usdmyr = _get_price("USDMYR=X") or 4.5
+    return {"prices": prices, "usdmyr": usdmyr}
 
 
 # ── Serve frontend ─────────────────────────────────────────────────────────────
