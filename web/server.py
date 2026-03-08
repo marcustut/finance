@@ -380,10 +380,10 @@ def _get_price(ticker: str) -> float | None:
 
 
 @app.get("/api/prices")
-def get_prices(tickers: str):
+def get_prices(tickers: str = ""):
     ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     prices = {t: _get_price(t) for t in ticker_list}
-    usdmyr = _get_price("USDMYR=X") or 4.5
+    usdmyr = _get_price("USDMYR=X")
     return {"prices": prices, "usdmyr": usdmyr}
 
 

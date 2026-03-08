@@ -156,7 +156,13 @@
          PAGE: DASHBOARD / EXPENSES VIZ
     ══════════════════════════════════════════════ -->
     <div class="page active" id="page-dash">
-      <h1>Finance</h1>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+        <h1>Finance</h1>
+        <div id="dash-currency-toggle" style="display:flex;gap:6px;margin-top:6px">
+          <button class="tab active" id="dash-curr-myr" onclick="setDashCurrency('MYR',this)" style="flex:none;padding:6px 14px">MYR</button>
+          <button class="tab" id="dash-curr-usd" onclick="setDashCurrency('USD',this)" style="flex:none;padding:6px 14px">USD</button>
+        </div>
+      </div>
       <p class="sub" style="margin-bottom:16px" id="dash-subtitle">Loading…</p>
 
       <div class="stats">
@@ -179,6 +185,7 @@
         <h2>By Category (All Time)</h2>
         <div class="chart-wrap"><canvas id="chart-alltime-pie"></canvas></div>
       </div>
+      <div id="alltime-pie-legend" style="display:flex;flex-wrap:wrap;gap:4px 14px;padding:4px 0 12px"></div>
 
       <div class="section-title">Last 3 Months Breakdown</div>
       <div class="charts-row" id="monthly-pies"></div>
@@ -415,8 +422,17 @@ let editingId   = null;
 let editingType = null;
 let charts      = {};
 
+let _dashData          = null;
+let _dashCurrency      = 'MYR';
 let _portfolioData     = null;
 let _portfolioCurrency = 'MYR';
+
+function setDashCurrency(cur, btn) {
+  _dashCurrency = cur;
+  document.querySelectorAll('#dash-currency-toggle .tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (_dashData) renderDash();
+}
 
 function setPortfolioCurrency(cur, btn) {
   _portfolioCurrency = cur;
@@ -598,7 +614,7 @@ function destroyChart(id) {
 Chart.defaults.color = '#888899';
 Chart.defaults.font.family = "'SF Mono', ui-monospace, monospace";
 
-function makeBarChart(canvasId, labels, data) {
+function makeBarChart(canvasId, labels, data, prefix = 'RM ') {
   destroyChart(canvasId);
   const ctx = document.getElementById(canvasId).getContext('2d');
   charts[canvasId] = new Chart(ctx, {
@@ -616,10 +632,10 @@ function makeBarChart(canvasId, labels, data) {
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` RM ${ctx.parsed.y.toFixed(2)}` } } },
+        tooltip: { callbacks: { label: ctx => ` ${prefix}${ctx.parsed.y.toFixed(2)}` } } },
       scales: {
         x: { grid: { color: '#2a2a38' }, ticks: { color: '#888899' } },
-        y: { grid: { color: '#2a2a38' }, ticks: { color: '#888899', callback: v => `RM ${v}` } }
+        y: { grid: { color: '#2a2a38' }, ticks: { color: '#888899', callback: v => `${prefix}${v}` } }
       }
     }
   });
@@ -653,45 +669,75 @@ function makePieChart(canvasId, labels, data, colors, prefix = 'RM ') {
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 async function loadDash() {
-  const data = await fetch('/api/analytics/expenses').then(r => r.json());
+  const [data, priceData] = await Promise.all([
+    fetch('/api/analytics/expenses').then(r => r.json()),
+    fetch('/api/prices').then(r => r.json()).catch(() => ({})),
+  ]);
+  const usdmyr = priceData.usdmyr ?? null;
+  if (usdmyr === null) {
+    const usdBtn = document.getElementById('dash-curr-usd');
+    usdBtn.disabled = true;
+    usdBtn.style.opacity = '0.35';
+    usdBtn.title = 'USDMYR rate unavailable';
+  }
+  _dashData = { ...data, usdmyr };
+  renderDash();
+}
+
+function renderDash() {
+  const { monthly, by_category, monthly_by_category, usdmyr } = _dashData;
+  const isMyr  = _dashCurrency === 'MYR';
+  const prefix = isMyr ? 'RM ' : 'USD ';
+  const rate   = usdmyr || 1;
+  const cvt    = v => isMyr ? v : v / rate;
 
   // Stats
   const now = new Date();
   const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const monthRow = data.monthly.find(m => m.month === curMonth);
-  document.getElementById('stat-month-total').textContent = monthRow ? `RM ${monthRow.total.toFixed(0)}` : 'RM 0';
-  document.getElementById('dash-subtitle').textContent = `${curMonth} · ${data.by_category.length} categories`;
-  document.getElementById('stat-cat-top').textContent = data.by_category[0]?.category?.toUpperCase() || '—';
+  const monthRow = monthly.find(m => m.month === curMonth);
+  const monthTotal = monthRow?.total ?? 0;
+  document.getElementById('stat-month-total').textContent = `${prefix}${cvt(monthTotal).toFixed(0)}`;
+  document.getElementById('dash-subtitle').textContent = `${curMonth} · ${by_category.length} categories`;
+  document.getElementById('stat-cat-top').textContent = by_category[0]?.category?.toUpperCase() || '—';
 
   // Monthly bar
-  if (data.monthly.length) {
-    makeBarChart('chart-monthly', data.monthly.map(m => m.month), data.monthly.map(m => m.total));
+  if (monthly.length) {
+    makeBarChart('chart-monthly', monthly.map(m => m.month), monthly.map(m => cvt(m.total)), prefix);
   }
 
-  // All-time pie
-  if (data.by_category.length) {
+  // All-time pie + allocation legend
+  if (by_category.length) {
+    const totalAllTime = by_category.reduce((s, c) => s + c.total, 0);
     makePieChart('chart-alltime-pie',
-      data.by_category.map(c => c.category),
-      data.by_category.map(c => c.total),
-      data.by_category.map(c => CAT_COLOR[c.category] || PALETTE[0])
+      by_category.map(c => c.category),
+      by_category.map(c => cvt(c.total)),
+      by_category.map(c => CAT_COLOR[c.category] || PALETTE[0]),
+      prefix
     );
+    document.getElementById('alltime-pie-legend').innerHTML = by_category.map(c =>
+      `<span style="font-size:11px;color:var(--sub)">
+         <span style="color:${CAT_COLOR[c.category] || PALETTE[0]}">●</span>
+         ${c.category}
+         <span style="color:var(--text);font-weight:600">${(c.total/totalAllTime*100).toFixed(1)}%</span>
+       </span>`
+    ).join('');
   }
 
   // Last 3 month pies
-  const allMonths = [...new Set(data.monthly_by_category.map(r => r.month))].sort().slice(-3);
+  const allMonths = [...new Set(monthly_by_category.map(r => r.month))].sort().slice(-3);
   const container = document.getElementById('monthly-pies');
   container.innerHTML = '';
   allMonths.forEach(month => {
-    const rows = data.monthly_by_category.filter(r => r.month === month);
+    const rows = monthly_by_category.filter(r => r.month === month);
     const total = rows.reduce((s,r) => s + r.total, 0);
     const div = document.createElement('div');
     div.className = 'card';
-    div.innerHTML = `<h3>${month}</h3><div class="sub" style="margin-bottom:8px">RM ${total.toFixed(2)}</div>
+    div.innerHTML = `<h3>${month}</h3><div class="sub" style="margin-bottom:8px">${prefix}${cvt(total).toFixed(2)}</div>
       <div class="chart-wrap-sm"><canvas id="pie-${month}"></canvas></div>`;
     container.appendChild(div);
     requestAnimationFrame(() => {
-      makePieChart(`pie-${month}`, rows.map(r => r.category), rows.map(r => r.total),
-        rows.map(r => CAT_COLOR[r.category] || PALETTE[0]));
+      makePieChart(`pie-${month}`, rows.map(r => r.category), rows.map(r => cvt(r.total)),
+        rows.map(r => CAT_COLOR[r.category] || PALETTE[0]), prefix);
     });
   });
 }
